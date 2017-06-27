@@ -61,17 +61,19 @@ func getCertificateID(d *schema.ResourceData, config Config) (int, error) {
 		return -1, fmt.Errorf("Error while reading response body. %s", err)
 	}
 
-	var certificateID int
+	certificateID := 0
 	totalResults := certificatesResponse["total"].(float64)
 	if totalResults > 0 {
 		items := certificatesResponse["items"].([]interface{})
 		for _, item := range items {
 			itemMap := item.(map[string]interface{})
-			if itemMap["active"].(bool) {
+			if itemMap["active"].(bool) && itemMap["cn"].(string) == commonName {
 				certificateID = int(itemMap["id"].(float64))
 			}
 		}
-	} else {
+	}
+
+	if certificateID == 0 {
 		certificateID, err = createCertificate(d, config)
 		if err != nil {
 			return -1, fmt.Errorf("Error creating certificate. %s", err)
