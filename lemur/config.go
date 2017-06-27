@@ -18,8 +18,28 @@ type CreateCertificateRequest struct {
 	Description        string                            `json:"description"`
 	Rotation           bool                              `json:"rotation"`
 	ValidityYears      int                               `json:"validityYears"`
+	Extensions         CreateCertificateExtensions       `json:"extensions,omitempty"`
 }
 
 type CreateCertificateRequestAuthority struct {
 	Name string `json:"name"`
+}
+
+type CreateCertificateExtensions struct {
+	SubAltNames      CreateCertificateAltNames         `json:"subAltNames,omitempty"`
+	ExtendedKeyUsage CreateCertificateExtendedKeyUsage `json:"extendedKeyUsage,omitempty"`
+}
+
+type CreateCertificateAltNames struct {
+	Names []CreateCertificateNames `json:"names,omitempty"`
+}
+
+type CreateCertificateNames struct {
+	NameType string `json:"nameType"`
+	Value    string `json:"value"`
+}
+
+type CreateCertificateExtendedKeyUsage struct {
+	UseClientAuthentication bool `json:"useClientAuthentication"`
+	UseServerAuthentication bool `json:"useServerAuthentication"`
 }

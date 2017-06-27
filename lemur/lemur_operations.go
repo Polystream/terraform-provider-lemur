@@ -8,8 +8,25 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/hashicorp/terraform/helper/hashcode"
 	"github.com/hashicorp/terraform/helper/schema"
 )
+
+func resourceSANHash(v interface{}) int {
+	var buf bytes.Buffer
+	m := v.(map[string]interface{})
+	buf.WriteString(fmt.Sprintf("%s", m["type"].(string)))
+	buf.WriteString(fmt.Sprintf("%s", m["value"].(string)))
+	return hashcode.String(buf.String())
+}
+
+func resourceEKUHash(v interface{}) int {
+	var buf bytes.Buffer
+	m := v.(map[string]interface{})
+	buf.WriteString(fmt.Sprintf("%t", m["use_client_authentication"].(bool)))
+	buf.WriteString(fmt.Sprintf("%t", m["use_server_authentication"].(bool)))
+	return hashcode.String(buf.String())
+}
 
 func getCertificateID(d *schema.ResourceData, config Config) (int, error) {
 	client := &http.Client{}
@@ -176,6 +193,33 @@ func createCertificate(d *schema.ResourceData, config Config) (int, error) {
 		requestData.Country = val.(string)
 	}
 
+	requestData.Extensions = CreateCertificateExtensions{}
+
+	if sans := d.Get("san").(*schema.Set); sans.Len() > 0 {
+		requestData.Extensions.SubAltNames = CreateCertificateAltNames{
+			Names: []CreateCertificateNames{},
+		}
+		for _, san := range sans.List() {
+			san := san.(map[string]interface{})
+
+			sanValue := CreateCertificateNames{
+				NameType: san["type"].(string),
+				Value:    san["value"].(string),
+			}
+
+			requestData.Extensions.SubAltNames.Names = append(requestData.Extensions.SubAltNames.Names, sanValue)
+		}
+	}
+
+	if keyUsages, ok := d.GetOk("extended_key_usage"); ok {
+		keyUsages := keyUsages.(*schema.Set).List()
+		keyUsage := keyUsages[0].(map[string]interface{})
+		requestData.Extensions.ExtendedKeyUsage = CreateCertificateExtendedKeyUsage{
+			UseClientAuthentication: keyUsage["use_client_authentication"].(bool),
+			UseServerAuthentication: keyUsage["use_server_authentication"].(bool),
+		}
+	}
+
 	jsonValue, _ := json.Marshal(requestData)
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonValue))
@@ -233,6 +277,7 @@ func exportCertificate(certificateID int, d *schema.ResourceData, config Config)
 		return fmt.Errorf("Error creating request: %s", url)
 	}
 	req.Header.Set("Authorization", "bearer "+config.Token)
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -241,13 +286,13 @@ func exportCertificate(certificateID int, d *schema.ResourceData, config Config)
 
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("HTTP request error. Response code: %d", resp.StatusCode)
-	}
-
 	responseBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("Error while reading response body. %s", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("HTTP request error. Response code: %d \n%s", resp.StatusCode, string(responseBytes[:]))
 	}
 
 	var exportResponse map[string]interface{}

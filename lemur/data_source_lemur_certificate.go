@@ -51,6 +51,41 @@ func dataSourceLemurCertificate() *schema.Resource {
 				Type:     schema.TypeInt,
 				Optional: true,
 			},
+			"san": {
+				Type:     schema.TypeSet,
+				Optional: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"type": {
+							Type:     schema.TypeString,
+							Required: true,
+						},
+						"value": {
+							Type:     schema.TypeString,
+							Required: true,
+						},
+					},
+				},
+				Set: resourceSANHash,
+			},
+			"extended_key_usage": {
+				Type:     schema.TypeSet,
+				Optional: true,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"use_client_authentication": {
+							Type:     schema.TypeBool,
+							Required: true,
+						},
+						"use_server_authentication": {
+							Type:     schema.TypeBool,
+							Required: true,
+						},
+					},
+				},
+				Set: resourceSANHash,
+			},
 
 			"chain": &schema.Schema{
 				Type:     schema.TypeString,
