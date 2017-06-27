@@ -6,9 +6,9 @@ import (
 	"github.com/hashicorp/terraform/helper/schema"
 )
 
-func dataSourceLemurCertificate() *schema.Resource {
+func dataSourceLemurCertificatePKCS() *schema.Resource {
 	return &schema.Resource{
-		Read: dataSourceLemurCertificateRead,
+		Read: dataSourceLemurCertificatePKCSRead,
 
 		Schema: map[string]*schema.Schema{
 			"common_name": &schema.Schema{
@@ -52,17 +52,12 @@ func dataSourceLemurCertificate() *schema.Resource {
 				Optional: true,
 			},
 
-			"chain": &schema.Schema{
+			"passphrase": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
 			},
-			"public_certificate": &schema.Schema{
-				Type:     schema.TypeString,
-				Optional: true,
-				Computed: true,
-			},
-			"private_certificate": &schema.Schema{
+			"base_64": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
@@ -71,7 +66,7 @@ func dataSourceLemurCertificate() *schema.Resource {
 	}
 }
 
-func dataSourceLemurCertificateRead(d *schema.ResourceData, meta interface{}) error {
+func dataSourceLemurCertificatePKCSRead(d *schema.ResourceData, meta interface{}) error {
 	config := meta.(Config)
 
 	certificateID, err := getCertificateID(d, config)
@@ -79,12 +74,7 @@ func dataSourceLemurCertificateRead(d *schema.ResourceData, meta interface{}) er
 		return err
 	}
 
-	err = getPublicCertificateData(certificateID, d, config)
-	if err != nil {
-		return err
-	}
-
-	err = getPrivateCertificateData(certificateID, d, config)
+	err = exportCertificate(certificateID, d, config)
 	if err != nil {
 		return err
 	}
