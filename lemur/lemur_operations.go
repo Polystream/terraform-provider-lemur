@@ -15,8 +15,12 @@ import (
 func resourceSANHash(v interface{}) int {
 	var buf bytes.Buffer
 	m := v.(map[string]interface{})
-	buf.WriteString(fmt.Sprintf("%s", m["type"].(string)))
-	buf.WriteString(fmt.Sprintf("%s", m["value"].(string)))
+	if m["type"] != nil {
+		buf.WriteString(fmt.Sprintf("%s", m["type"].(string)))
+	}
+	if m["value"] != nil {
+		buf.WriteString(fmt.Sprintf("%s", m["value"].(string)))
+	}
 	return hashcode.String(buf.String())
 }
 
@@ -30,9 +34,9 @@ func resourceEKUHash(v interface{}) int {
 
 func getCertificateID(d *schema.ResourceData, config Config) (int, error) {
 	client := &http.Client{}
-	commonName := d.Get("common_name").(string)
+	name := d.Get("name").(string)
 
-	findExistingURL := config.Host + "/api/1/certificates?filter=cn;" + commonName
+	findExistingURL := config.Host + "/api/1/certificates?filter=name;" + name
 	findExisting, err := http.NewRequest("GET", findExistingURL, nil)
 	if err != nil {
 		return -1, fmt.Errorf("Error creating request: %s", findExistingURL)
@@ -67,8 +71,9 @@ func getCertificateID(d *schema.ResourceData, config Config) (int, error) {
 		items := certificatesResponse["items"].([]interface{})
 		for _, item := range items {
 			itemMap := item.(map[string]interface{})
-			if itemMap["active"].(bool) && itemMap["cn"].(string) == commonName {
+			if itemMap["active"].(bool) && itemMap["name"].(string) == name {
 				certificateID = int(itemMap["id"].(float64))
+				break
 			}
 		}
 	}
@@ -83,79 +88,79 @@ func getCertificateID(d *schema.ResourceData, config Config) (int, error) {
 	return certificateID, nil
 }
 
-func getPublicCertificateData(certificateID int, d *schema.ResourceData, config Config) error {
+func getPublicCertificateData(certificateID int, d *schema.ResourceData, config Config) (string, string, error) {
 	client := &http.Client{}
 
 	url := config.Host + "/api/1/certificates/" + strconv.Itoa(certificateID)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return fmt.Errorf("Error creating request: %s", url)
+		return "", "", fmt.Errorf("Error creating request: %s", url)
 	}
 	req.Header.Set("Authorization", "bearer "+config.Token)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("Error during making a request: %s", url)
+		return "", "", fmt.Errorf("Error during making a request: %s", url)
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("HTTP request error. Response code: %d", resp.StatusCode)
+		return "", "", fmt.Errorf("HTTP request error. Response code: %d", resp.StatusCode)
 	}
 
 	responseBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("Error while reading response body. %s", err)
+		return "", "", fmt.Errorf("Error while reading response body. %s", err)
 	}
 
 	var certificatesResponse map[string]interface{}
 	err = json.Unmarshal(responseBytes, &certificatesResponse)
 	if err != nil {
-		return fmt.Errorf("Error while reading response body. %s", err)
+		return "", "", fmt.Errorf("Error while reading response body. %s", err)
 	}
 
-	d.Set("chain", certificatesResponse["chain"].(string))
-	d.Set("public_certificate", certificatesResponse["body"].(string))
+	chain := ""
+	if certificatesResponse["chain"] != nil {
+		chain = certificatesResponse["chain"].(string)
+	}
 
-	return nil
+	return chain, certificatesResponse["body"].(string), nil
 }
 
-func getPrivateCertificateData(certificateID int, d *schema.ResourceData, config Config) error {
+func getPrivateCertificateData(certificateID int, d *schema.ResourceData, config Config) (string, error) {
 	client := &http.Client{}
 
 	url := config.Host + "/api/1/certificates/" + strconv.Itoa(certificateID) + "/key"
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return fmt.Errorf("Error creating request: %s", url)
+		return "", fmt.Errorf("Error creating request: %s", url)
 	}
 	req.Header.Set("Authorization", "bearer "+config.Token)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("Error during making a request: %s", url)
+		return "", fmt.Errorf("Error during making a request: %s", url)
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("HTTP request error. Response code: %d", resp.StatusCode)
+		return "", fmt.Errorf("HTTP request error. Response code: %d", resp.StatusCode)
 	}
 
 	responseBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("Error while reading response body. %s", err)
+		return "", fmt.Errorf("Error while reading response body. %s", err)
 	}
 
 	var keyReponse map[string]interface{}
 	err = json.Unmarshal(responseBytes, &keyReponse)
 	if err != nil {
-		return fmt.Errorf("Error while reading response body. %s", err)
+		return "", fmt.Errorf("Error while reading response body. %s", err)
 	}
 
-	d.Set("private_certificate", keyReponse["key"].(string))
-
-	return nil
+	return keyReponse["key"].(string), nil
 }
 
 func createCertificate(d *schema.ResourceData, config Config) (int, error) {
@@ -166,6 +171,7 @@ func createCertificate(d *schema.ResourceData, config Config) (int, error) {
 		Authority: CreateCertificateRequestAuthority{
 			Name: d.Get("authority").(string),
 		},
+		Name:          d.Get("name").(string),
 		Owner:         d.Get("owner").(string),
 		CommonName:    d.Get("common_name").(string),
 		Description:   d.Get("description").(string),
@@ -256,7 +262,7 @@ func createCertificate(d *schema.ResourceData, config Config) (int, error) {
 	return int(keyReponse["id"].(float64)), nil
 }
 
-func exportCertificate(certificateID int, d *schema.ResourceData, config Config) error {
+func exportCertificatePKCS(certificateID int, d *schema.ResourceData, config Config) (string, string, error) {
 	client := &http.Client{}
 
 	url := config.Host + "/api/1/certificates/" + strconv.Itoa(certificateID) + "/export"
@@ -276,35 +282,182 @@ func exportCertificate(certificateID int, d *schema.ResourceData, config Config)
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonValue))
 	if err != nil {
-		return fmt.Errorf("Error creating request: %s", url)
+		return "", "", fmt.Errorf("Error creating request: %s", url)
 	}
 	req.Header.Set("Authorization", "bearer "+config.Token)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("Error during making a request: %s", url)
+		return "", "", fmt.Errorf("Error during making a request: %s", url)
 	}
 
 	defer resp.Body.Close()
 
 	responseBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("Error while reading response body. %s", err)
+		return "", "", fmt.Errorf("Error while reading response body. %s", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("HTTP request error. Response code: %d \n%s", resp.StatusCode, string(responseBytes[:]))
+		return "", "", fmt.Errorf("HTTP request error. Response code: %d \n%s", resp.StatusCode, string(responseBytes[:]))
 	}
 
 	var exportResponse map[string]interface{}
 	err = json.Unmarshal(responseBytes, &exportResponse)
 	if err != nil {
-		return fmt.Errorf("Error while reading response body. %s", err)
+		return "", "", fmt.Errorf("Error while reading response body. %s", err)
 	}
 
-	d.Set("passphrase", exportResponse["passphrase"].(string))
-	d.Set("base_64", exportResponse["data"].(string))
+	return exportResponse["data"].(string), exportResponse["passphrase"].(string), nil
+}
 
-	return nil
+func exportCertificateCRT(certificateID int, d *schema.ResourceData, config Config) (string, error) {
+	client := &http.Client{}
+
+	url := config.Host + "/api/1/certificates/" + strconv.Itoa(certificateID) + "/export"
+
+	requestData := map[string]interface{}{
+		"plugin": map[string]interface{}{
+			"pluginOptions": []map[string]string{
+				map[string]string{
+					"name":  "type",
+					"value": "CRT (.crt)",
+				},
+			},
+			"slug": "openssl-export",
+		},
+	}
+	jsonValue, _ := json.Marshal(requestData)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonValue))
+	if err != nil {
+		return "", fmt.Errorf("Error creating request: %s", url)
+	}
+	req.Header.Set("Authorization", "bearer "+config.Token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("Error during making a request: %s", url)
+	}
+
+	defer resp.Body.Close()
+
+	responseBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("Error while reading response body. %s", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("HTTP request error. Response code: %d \n%s", resp.StatusCode, string(responseBytes[:]))
+	}
+
+	var exportResponse map[string]interface{}
+	err = json.Unmarshal(responseBytes, &exportResponse)
+	if err != nil {
+		return "", fmt.Errorf("Error while reading response body. %s", err)
+	}
+
+	return exportResponse["data"].(string), nil
+}
+
+func exportCertificateJKSKeystore(certificateID int, d *schema.ResourceData, config Config) (string, string, error) {
+	client := &http.Client{}
+
+	url := config.Host + "/api/1/certificates/" + strconv.Itoa(certificateID) + "/export"
+
+	requestData := map[string]interface{}{
+		"plugin": map[string]interface{}{
+			"pluginOptions": []map[string]string{
+				map[string]string{
+					"name":  "passphrase",
+					"value": "sadfsdafsdafsdafsdafsdafs",
+				},
+			},
+			"slug": "java-keystore-jks",
+		},
+	}
+	jsonValue, _ := json.Marshal(requestData)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonValue))
+	if err != nil {
+		return "", "", fmt.Errorf("Error creating request: %s", url)
+	}
+	req.Header.Set("Authorization", "bearer "+config.Token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("Error during making a request: %s", url)
+	}
+
+	defer resp.Body.Close()
+
+	responseBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", fmt.Errorf("Error while reading response body. %s", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return "", "", fmt.Errorf("HTTP request error. Response code: %d \n%s", resp.StatusCode, string(responseBytes[:]))
+	}
+
+	var exportResponse map[string]interface{}
+	err = json.Unmarshal(responseBytes, &exportResponse)
+	if err != nil {
+		return "", "", fmt.Errorf("Error while reading response body. %s", err)
+	}
+
+	return exportResponse["data"].(string), exportResponse["passphrase"].(string), nil
+}
+
+func exportCertificateJKSTruststore(certificateID int, d *schema.ResourceData, config Config) (string, string, error) {
+	client := &http.Client{}
+
+	url := config.Host + "/api/1/certificates/" + strconv.Itoa(certificateID) + "/export"
+
+	requestData := map[string]interface{}{
+		"plugin": map[string]interface{}{
+			"pluginOptions": []map[string]string{
+				map[string]string{
+					"name":  "passphrase",
+					"value": "sadfsdafsdafsdafsdafsdafs",
+				},
+			},
+			"slug": "java-truststore-jks",
+		},
+	}
+	jsonValue, _ := json.Marshal(requestData)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonValue))
+	if err != nil {
+		return "", "", fmt.Errorf("Error creating request: %s", url)
+	}
+	req.Header.Set("Authorization", "bearer "+config.Token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("Error during making a request: %s", url)
+	}
+
+	defer resp.Body.Close()
+
+	responseBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", fmt.Errorf("Error while reading response body. %s", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return "", "", fmt.Errorf("HTTP request error. Response code: %d \n%s", resp.StatusCode, string(responseBytes[:]))
+	}
+
+	var exportResponse map[string]interface{}
+	err = json.Unmarshal(responseBytes, &exportResponse)
+	if err != nil {
+		return "", "", fmt.Errorf("Error while reading response body. %s", err)
+	}
+
+	return exportResponse["data"].(string), exportResponse["passphrase"].(string), nil
 }

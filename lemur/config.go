@@ -7,6 +7,7 @@ type Config struct {
 
 type CreateCertificateRequest struct {
 	Authority          CreateCertificateRequestAuthority `json:"authority"`
+	Name               string                            `json:"name"`
 	Owner              string                            `json:"owner"`
 	CommonName         string                            `json:"commonName"`
 	Notify             bool                              `json:"notify"`
