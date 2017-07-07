@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"strings"
+
 	"github.com/hashicorp/terraform/helper/hashcode"
 	"github.com/hashicorp/terraform/helper/schema"
 )
@@ -71,7 +73,7 @@ func getCertificateID(d *schema.ResourceData, config Config) (int, error) {
 		items := certificatesResponse["items"].([]interface{})
 		for _, item := range items {
 			itemMap := item.(map[string]interface{})
-			if itemMap["active"].(bool) && itemMap["name"].(string) == name {
+			if itemMap["active"].(bool) && strings.HasPrefix(name, itemMap["name"].(string)) {
 				certificateID = int(itemMap["id"].(float64))
 				break
 			}
