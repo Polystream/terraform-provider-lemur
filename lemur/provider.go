@@ -36,11 +36,12 @@ func Provider() terraform.ResourceProvider {
 			},
 		},
 
-		ResourcesMap: map[string]*schema.Resource{},
+		ResourcesMap: map[string]*schema.Resource{
+			"lemur_certificate": resourceLemurCertificate(),
+		},
 
 		DataSourcesMap: map[string]*schema.Resource{
-			"lemur_certificate": dataSourceLemurCertificate(),
-			"lemur_authority":   dataSourceLemurAuthority(),
+			"lemur_authority": dataSourceLemurAuthority(),
 		},
 
 		ConfigureFunc: providerConfigure,
