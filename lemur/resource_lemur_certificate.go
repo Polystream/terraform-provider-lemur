@@ -334,7 +334,8 @@ func resourceLemurCertificateExists(d *schema.ResourceData, meta interface{}) (b
 }
 
 func resourceLemurCertificateDelete(d *schema.ResourceData, meta interface{}) error {
-	return fmt.Errorf("Delete: %t", false)
+	//TODO
+	return nil
 }
 
 func resourceLemurCertificateRead(d *schema.ResourceData, meta interface{}) error {
