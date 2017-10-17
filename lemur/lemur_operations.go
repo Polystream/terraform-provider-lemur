@@ -2,8 +2,10 @@ package lemur
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"strconv"
@@ -161,12 +163,18 @@ func exportCertificatePKCS(certificateID int, d *schema.ResourceData, config Con
 
 	url := config.Host + "/api/1/certificates/" + strconv.Itoa(certificateID) + "/export"
 
+	password := newPassword(20)
+
 	requestData := map[string]interface{}{
 		"plugin": map[string]interface{}{
 			"pluginOptions": []map[string]string{
 				map[string]string{
 					"name":  "type",
 					"value": "PKCS12 (.p12)",
+				},
+				map[string]string{
+					"name":  "passphrase",
+					"value": password,
 				},
 			},
 			"slug": "openssl-export",
@@ -261,12 +269,14 @@ func exportCertificateJKSKeystore(certificateID int, d *schema.ResourceData, con
 
 	url := config.Host + "/api/1/certificates/" + strconv.Itoa(certificateID) + "/export"
 
+	password := newPassword(20)
+
 	requestData := map[string]interface{}{
 		"plugin": map[string]interface{}{
 			"pluginOptions": []map[string]string{
 				map[string]string{
 					"name":  "passphrase",
-					"value": "sadfsdafsdafsdafsdafsdafs",
+					"value": password,
 				},
 			},
 			"slug": "java-keystore-jks",
@@ -311,12 +321,14 @@ func exportCertificateJKSTruststore(certificateID int, d *schema.ResourceData, c
 
 	url := config.Host + "/api/1/certificates/" + strconv.Itoa(certificateID) + "/export"
 
+	password := newPassword(20)
+
 	requestData := map[string]interface{}{
 		"plugin": map[string]interface{}{
 			"pluginOptions": []map[string]string{
 				map[string]string{
 					"name":  "passphrase",
-					"value": "sadfsdafsdafsdafsdafsdafs",
+					"value": password,
 				},
 			},
 			"slug": "java-truststore-jks",
@@ -354,4 +366,33 @@ func exportCertificateJKSTruststore(certificateID int, d *schema.ResourceData, c
 	}
 
 	return exportResponse["data"].(string), exportResponse["passphrase"].(string), nil
+}
+
+var passwordChars = []byte("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")
+
+func newPassword(length int) string {
+	return randChar(length, passwordChars)
+}
+
+func randChar(length int, chars []byte) string {
+	newPword := make([]byte, length)
+	randomData := make([]byte, length+(length/4)) // storage for random bytes.
+	clen := byte(len(chars))
+	maxrb := byte(256 - (256 % len(chars)))
+	i := 0
+	for {
+		if _, err := io.ReadFull(rand.Reader, randomData); err != nil {
+			panic(err)
+		}
+		for _, c := range randomData {
+			if c >= maxrb {
+				continue
+			}
+			newPword[i] = chars[c%clen]
+			i++
+			if i == length {
+				return string(newPword)
+			}
+		}
+	}
 }
